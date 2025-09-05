@@ -28,21 +28,35 @@
         });
         
         socket.on('offer', async (offer) => {
-            if (!pc) await createPeerConnection();
-            await pc.setRemoteDescription(offer);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            socket.emit('answer', answer);
-            document.getElementById('status').textContent = 'Отвечаем на звонок...';
+            try {
+                if (!pc) await createPeerConnection();
+                await pc.setRemoteDescription(offer);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit('answer', answer);
+                document.getElementById('status').textContent = 'Соединяемся...';
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
         });
         
         socket.on('answer', async (answer) => {
-            await pc.setRemoteDescription(answer);
-            document.getElementById('status').textContent = 'Соединяемся...';
+            try {
+                await pc.setRemoteDescription(answer);
+                document.getElementById('status').textContent = 'Соединяемся...';
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
         });
         
         socket.on('ice-candidate', async (candidate) => {
-            if (pc) await pc.addIceCandidate(candidate);
+            try {
+                if (pc && pc.remoteDescription) {
+                    await pc.addIceCandidate(candidate);
+                }
+            } catch (error) {
+                console.log('ICE candidate error:', error);
+            }
         });
         
         async function createPeerConnection() {
@@ -51,13 +65,23 @@
             pc.ontrack = (event) => {
                 const audio = new Audio();
                 audio.srcObject = event.streams[0];
-                audio.play();
+                audio.autoplay = true;
+                audio.play().catch(e => console.log('Audio play error:', e));
                 document.getElementById('status').textContent = 'Разговариваем!';
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                console.log('ICE state:', pc.iceConnectionState);
+                if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                    document.getElementById('status').textContent = 'Разговариваем!';
+                }
             };
             
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.emit('ice-candidate', event.candidate);
+                } else {
+                    console.log('ICE gathering complete');
                 }
             };
             
