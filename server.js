@@ -8,7 +8,19 @@ const io = socketIo(server);
 
 app.use(express.static('public'));
 
+let userCount = 0;
+
 io.on('connection', (socket) => {
+    userCount++;
+    io.emit('user-count', userCount);
+    console.log(`Пользователь подключился. Всего: ${userCount}`);
+    
+    socket.on('disconnect', () => {
+        userCount--;
+        io.emit('user-count', userCount);
+        console.log(`Пользователь отключился. Всего: ${userCount}`);
+    });
+
     socket.on('offer', (data) => {
         socket.broadcast.emit('offer', data);
     });

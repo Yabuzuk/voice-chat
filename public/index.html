@@ -11,13 +11,15 @@
 <body>
     <h1>Голосовая связь</h1>
     <div id="status">Подключение...</div>
-    <button id="startBtn" onclick="startCall()">Начать разговор</button>
+    <div id="users">Пользователей онлайн: <span id="userCount">0</span></div>
+    <button id="startBtn" onclick="startCall()" style="display:none;">Начать разговор</button>
     
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         let pc;
         let localStream;
+        let isInitiator = false;
         
         const config = {
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -27,14 +29,28 @@
             document.getElementById('status').textContent = 'Готов к звонку';
         });
         
+        socket.on('user-count', (count) => {
+            document.getElementById('userCount').textContent = count;
+            if (count === 1) {
+                document.getElementById('status').textContent = 'Ждем второго пользователя...';
+                document.getElementById('startBtn').style.display = 'block';
+                isInitiator = true;
+            } else if (count === 2 && !isInitiator) {
+                document.getElementById('status').textContent = 'Подключаемся автоматически...';
+                setTimeout(() => createPeerConnection(), 1000);
+            }
+        });
+        
         socket.on('offer', async (offer) => {
             try {
                 if (!pc) await createPeerConnection();
-                await pc.setRemoteDescription(offer);
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                socket.emit('answer', answer);
-                document.getElementById('status').textContent = 'Соединяемся...';
+                if (pc.signalingState === 'stable') {
+                    await pc.setRemoteDescription(offer);
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit('answer', answer);
+                    document.getElementById('status').textContent = 'Соединяемся...';
+                }
             } catch (error) {
                 document.getElementById('status').textContent = 'Ошибка: ' + error.message;
             }
@@ -42,8 +58,10 @@
         
         socket.on('answer', async (answer) => {
             try {
-                await pc.setRemoteDescription(answer);
-                document.getElementById('status').textContent = 'Соединяемся...';
+                if (pc && pc.signalingState === 'have-local-offer') {
+                    await pc.setRemoteDescription(answer);
+                    document.getElementById('status').textContent = 'Соединяемся...';
+                }
             } catch (error) {
                 document.getElementById('status').textContent = 'Ошибка: ' + error.message;
             }
@@ -94,7 +112,7 @@
         async function startCall() {
             try {
                 document.getElementById('status').textContent = 'Запрашиваем микрофон...';
-                await createPeerConnection();
+                if (!pc) await createPeerConnection();
                 
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
