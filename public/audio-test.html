@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Голосовая связь - исправлено</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 20px; }
+        button { padding: 15px 30px; margin: 10px; font-size: 18px; }
+        #status { font-size: 20px; margin: 20px; }
+        audio { margin: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Голосовая связь</h1>
+    <div id="status">Подключение...</div>
+    <button id="callBtn" onclick="makeCall()">Позвонить</button>
+    <div id="audioContainer"></div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let pc;
+        let localStream;
+        
+        socket.on('connect', () => {
+            document.getElementById('status').textContent = 'Готов. Нажмите "Позвонить"';
+        });
+        
+        socket.on('offer', async (offer) => {
+            try {
+                document.getElementById('status').textContent = 'Входящий звонок...';
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                
+                pc.ontrack = event => {
+                    const audio = document.createElement('audio');
+                    audio.srcObject = event.streams[0];
+                    audio.autoplay = true;
+                    audio.volume = 1.0;
+                    audio.controls = true;
+                    document.getElementById('audioContainer').appendChild(audio);
+                    
+                    // Принудительный запуск
+                    setTimeout(() => {
+                        audio.play().then(() => {
+                            document.getElementById('status').textContent = 'Разговариваем! Звук включен.';
+                        }).catch(e => {
+                            document.getElementById('status').textContent = 'Нажмите play на аудио элементе';
+                        });
+                    }, 500);
+                };
+                
+                pc.onicecandidate = event => {
+                    if (event.candidate) socket.emit('ice-candidate', event.candidate);
+                };
+                
+                await pc.setRemoteDescription(offer);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit('answer', answer);
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        });
+        
+        socket.on('answer', async (answer) => {
+            try {
+                await pc.setRemoteDescription(answer);
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        });
+        
+        socket.on('ice-candidate', async (candidate) => {
+            try {
+                if (pc) await pc.addIceCandidate(candidate);
+            } catch (error) {
+                console.log('ICE error:', error);
+            }
+        });
+        
+        async function makeCall() {
+            try {
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                
+                pc.ontrack = event => {
+                    const audio = document.createElement('audio');
+                    audio.srcObject = event.streams[0];
+                    audio.autoplay = true;
+                    audio.volume = 1.0;
+                    audio.controls = true;
+                    document.getElementById('audioContainer').appendChild(audio);
+                    
+                    // Принудительный запуск
+                    setTimeout(() => {
+                        audio.play().then(() => {
+                            document.getElementById('status').textContent = 'Разговариваем! Звук включен.';
+                        }).catch(e => {
+                            document.getElementById('status').textContent = 'Нажмите play на аудио элементе';
+                        });
+                    }, 500);
+                };
+                
+                pc.onicecandidate = event => {
+                    if (event.candidate) socket.emit('ice-candidate', event.candidate);
+                };
+                
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                socket.emit('offer', offer);
+                
+                document.getElementById('status').textContent = 'Звоним...';
+                document.getElementById('callBtn').style.display = 'none';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
