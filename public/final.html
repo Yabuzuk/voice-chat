@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Финальная версия</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 20px; }
+        button { padding: 15px 30px; margin: 10px; font-size: 18px; }
+        #status { font-size: 20px; margin: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Голосовая связь</h1>
+    <div id="status">Подключение...</div>
+    <button id="callBtn" onclick="makeCall()">Позвонить</button>
+    <div id="audioContainer"></div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let pc;
+        let localStream;
+        let isOfferer = false;
+        
+        socket.on('connect', () => {
+            document.getElementById('status').textContent = 'Готов. Нажмите "Позвонить"';
+        });
+        
+        socket.on('offer', async (offer) => {
+            try {
+                console.log('Получен offer, состояние:', pc ? pc.signalingState : 'нет pc');
+                
+                if (isOfferer) {
+                    console.log('Игнорируем offer - мы сами звоним');
+                    return;
+                }
+                
+                document.getElementById('status').textContent = 'Входящий звонок...';
+                
+                if (!localStream) {
+                    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                }
+                
+                if (!pc) {
+                    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                    setupPeerConnection();
+                }
+                
+                if (pc.signalingState === 'stable') {
+                    await pc.setRemoteDescription(offer);
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit('answer', answer);
+                    console.log('Отправлен answer');
+                }
+                
+            } catch (error) {
+                console.error('Ошибка в offer:', error);
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        });
+        
+        socket.on('answer', async (answer) => {
+            try {
+                console.log('Получен answer, состояние:', pc ? pc.signalingState : 'нет pc');
+                
+                if (!isOfferer) {
+                    console.log('Игнорируем answer - мы не звоним');
+                    return;
+                }
+                
+                if (pc && pc.signalingState === 'have-local-offer') {
+                    await pc.setRemoteDescription(answer);
+                    console.log('Answer установлен');
+                } else {
+                    console.log('Неправильное состояние для answer:', pc ? pc.signalingState : 'нет pc');
+                }
+                
+            } catch (error) {
+                console.error('Ошибка в answer:', error);
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        });
+        
+        socket.on('ice-candidate', async (candidate) => {
+            try {
+                if (pc && pc.remoteDescription) {
+                    await pc.addIceCandidate(candidate);
+                    console.log('ICE candidate добавлен');
+                }
+            } catch (error) {
+                console.log('ICE error:', error);
+            }
+        });
+        
+        function setupPeerConnection() {
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            
+            pc.ontrack = event => {
+                console.log('Получен удаленный поток');
+                const audio = document.createElement('audio');
+                audio.srcObject = event.streams[0];
+                audio.autoplay = true;
+                audio.controls = true;
+                audio.volume = 1.0;
+                
+                document.getElementById('audioContainer').innerHTML = '<h3>Удаленный звук:</h3>';
+                document.getElementById('audioContainer').appendChild(audio);
+                
+                audio.play().then(() => {
+                    document.getElementById('status').textContent = 'Разговариваем!';
+                }).catch(e => {
+                    document.getElementById('status').textContent = 'Нажмите play на аудио';
+                });
+            };
+            
+            pc.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', event.candidate);
+                    console.log('ICE candidate отправлен');
+                }
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                console.log('ICE состояние:', pc.iceConnectionState);
+                if (pc.iceConnectionState === 'connected') {
+                    document.getElementById('status').textContent = 'Соединение установлено!';
+                }
+            };
+        }
+        
+        async function makeCall() {
+            try {
+                isOfferer = true;
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                setupPeerConnection();
+                
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                socket.emit('offer', offer);
+                
+                console.log('Offer отправлен, состояние:', pc.signalingState);
+                document.getElementById('status').textContent = 'Звоним...';
+                document.getElementById('callBtn').style.display = 'none';
+                
+            } catch (error) {
+                console.error('Ошибка в makeCall:', error);
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
