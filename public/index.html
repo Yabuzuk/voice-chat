@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Голосовая связь</title>
+    <meta charset="utf-8">
+</head>
+<body>
+    <h1>Прямая голосовая связь</h1>
+    <button id="startCall">Начать звонок</button>
+    <button id="endCall" disabled>Завершить звонок</button>
+    <div id="status">Ожидание подключения...</div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let localStream;
+        let peerConnection;
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        const startBtn = document.getElementById('startCall');
+        const endBtn = document.getElementById('endCall');
+        const status = document.getElementById('status');
+
+        startBtn.onclick = async () => {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            peerConnection = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            peerConnection.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', event.candidate);
+                }
+            };
+
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('offer', offer);
+            
+            startBtn.disabled = true;
+            endBtn.disabled = false;
+            status.textContent = 'Ожидание ответа...';
+        };
+
+        endBtn.onclick = () => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            startBtn.disabled = false;
+            endBtn.disabled = true;
+            status.textContent = 'Звонок завершен';
+        };
+
+        socket.on('offer', async (offer) => {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            peerConnection = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            peerConnection.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', event.candidate);
+                }
+            };
+
+            await peerConnection.setRemoteDescription(offer);
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', answer);
+            
+            startBtn.disabled = true;
+            endBtn.disabled = false;
+            status.textContent = 'Соединение установлено';
+        });
+
+        socket.on('answer', async (answer) => {
+            await peerConnection.setRemoteDescription(answer);
+            status.textContent = 'Соединение установлено';
+        });
+
+        socket.on('ice-candidate', async (candidate) => {
+            await peerConnection.addIceCandidate(candidate);
+        });
+    </script>
+</body>
+</html>
