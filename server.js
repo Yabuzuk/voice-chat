@@ -8,24 +8,24 @@ const io = socketIo(server);
 
 app.use(express.static('public'));
 
-let userCount = 0;
+let users = new Map();
 
 io.on('connection', (socket) => {
-    userCount++;
-    io.emit('user-count', userCount);
-    console.log(`Пользователь подключился. Всего: ${userCount}`);
+    users.set(socket.id, socket);
+    console.log(`Пользователь ${socket.id} подключился. Всего: ${users.size}`);
     
     socket.on('disconnect', () => {
-        userCount--;
-        io.emit('user-count', userCount);
-        console.log(`Пользователь отключился. Всего: ${userCount}`);
+        users.delete(socket.id);
+        console.log(`Пользователь ${socket.id} отключился. Всего: ${users.size}`);
     });
 
     socket.on('offer', (data) => {
+        console.log(`Offer от ${socket.id}`);
         socket.broadcast.emit('offer', data);
     });
 
     socket.on('answer', (data) => {
+        console.log(`Answer от ${socket.id}`);
         socket.broadcast.emit('answer', data);
     });
 
