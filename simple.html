@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Простая связь</title>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <h1>Голосовая связь</h1>
+    <div>Ваш ID: <span id="myId"></span></div>
+    <input id="peerId" placeholder="ID друга">
+    <button onclick="call()">Позвонить</button>
+    
+    <script>
+        const peer = new Peer();
+        let localStream;
+        
+        peer.on('open', id => {
+            document.getElementById('myId').textContent = id;
+        });
+        
+        peer.on('call', async call => {
+            localStream = await navigator.mediaDevices.getUserMedia({audio: true});
+            call.answer(localStream);
+            call.on('stream', stream => {
+                const audio = new Audio();
+                audio.srcObject = stream;
+                audio.play();
+            });
+        });
+        
+        async function call() {
+            const peerId = document.getElementById('peerId').value;
+            localStream = await navigator.mediaDevices.getUserMedia({audio: true});
+            const call = peer.call(peerId, localStream);
+            call.on('stream', stream => {
+                const audio = new Audio();
+                audio.srcObject = stream;
+                audio.play();
+            });
+        }
+    </script>
+</body>
+</html>

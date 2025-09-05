@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>P2P Голосовая связь</title>
+</head>
+<body>
+    <h1>Голосовая связь P2P</h1>
+    <div>Статус: <span id="status">Готов</span></div>
+    
+    <h3>Вариант 1: Вы звоните</h3>
+    <button onclick="createOffer()">Создать предложение</button><br>
+    <textarea id="offerBox" rows="3" cols="60" placeholder="Ваше предложение"></textarea><br>
+    <textarea id="answerBox" rows="3" cols="60" placeholder="Вставьте ответ друга"></textarea><br>
+    <button onclick="handleAnswer()">Принять ответ</button>
+    
+    <h3>Вариант 2: Друг звонит вам</h3>
+    <textarea id="incomingOffer" rows="3" cols="60" placeholder="Вставьте предложение друга"></textarea><br>
+    <button onclick="createAnswer()">Ответить</button><br>
+    <textarea id="myAnswer" rows="3" cols="60" placeholder="Ваш ответ"></textarea>
+    
+    <script>
+        let pc;
+        let localStream;
+        
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+        
+        async function createOffer() {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            pc = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            
+            pc.ontrack = event => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+                document.getElementById('status').textContent = 'Соединен! Говорите.';
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                document.getElementById('status').textContent = 'Состояние: ' + pc.iceConnectionState;
+            };
+            
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            // Ждем ICE кандидатов
+            await new Promise(resolve => {
+                pc.onicecandidate = event => {
+                    if (!event.candidate) resolve();
+                };
+            });
+            
+            document.getElementById('offerBox').value = JSON.stringify(pc.localDescription);
+            document.getElementById('status').textContent = 'Отправьте предложение другу';
+        }
+        
+        async function createAnswer() {
+            const offerStr = document.getElementById('incomingOffer').value;
+            if (!offerStr) return alert('Вставьте предложение');
+            
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            pc = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            
+            pc.ontrack = event => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+                document.getElementById('status').textContent = 'Соединен! Говорите.';
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                document.getElementById('status').textContent = 'Состояние: ' + pc.iceConnectionState;
+            };
+            
+            await pc.setRemoteDescription(JSON.parse(offerStr));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
+            // Ждем ICE кандидатов
+            await new Promise(resolve => {
+                pc.onicecandidate = event => {
+                    if (!event.candidate) resolve();
+                };
+            });
+            
+            document.getElementById('myAnswer').value = JSON.stringify(pc.localDescription);
+            document.getElementById('status').textContent = 'Отправьте ответ другу';
+        }
+        
+        async function handleAnswer() {
+            const answerStr = document.getElementById('answerBox').value;
+            if (!answerStr) return alert('Вставьте ответ');
+            
+            await pc.setRemoteDescription(JSON.parse(answerStr));
+            document.getElementById('status').textContent = 'Устанавливаем соединение...';
+        }
+    </script>
+</body>
+</html>

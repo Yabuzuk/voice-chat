@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Голосовая связь - исправлено</title>
+</head>
+<body>
+    <h1>Голосовая связь</h1>
+    <div>Статус: <span id="status">Готов</span></div><br>
+    
+    <button onclick="testMic()">Проверить микрофон</button>
+    <button onclick="createOffer()">1. Создать предложение</button><br><br>
+    <textarea id="offerBox" rows="6" cols="80" placeholder="Ваше предложение"></textarea><br>
+    <button onclick="copyText('offerBox')">Копировать</button><br><br>
+    
+    <textarea id="answerBox" rows="6" cols="80" placeholder="Вставьте ответ от друга"></textarea><br>
+    <button onclick="setAnswer()">Принять ответ</button><br><br>
+    
+    <hr>
+    
+    <textarea id="remoteOfferBox" rows="6" cols="80" placeholder="Или вставьте предложение от друга"></textarea><br>
+    <button onclick="createAnswer()">2. Создать ответ</button><br><br>
+    <textarea id="myAnswerBox" rows="6" cols="80" placeholder="Ваш ответ"></textarea><br>
+    <button onclick="copyText('myAnswerBox')">Копировать</button>
+    
+    <script>
+        let pc;
+        let localStream;
+        
+        async function testMic() {
+            try {
+                document.getElementById('status').textContent = 'Тестируем микрофон...';
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    } 
+                });
+                document.getElementById('status').textContent = 'Микрофон работает!';
+                stream.getTracks().forEach(track => track.stop());
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка микрофона: ' + error.message;
+                console.error('Mic error:', error);
+            }
+        }
+        
+        async function createOffer() {
+            try {
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true,
+                    video: false 
+                });
+                
+                document.getElementById('status').textContent = 'Создаем соединение...';
+                
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+                
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+                
+                pc.ontrack = event => {
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.autoplay = true;
+                    document.body.appendChild(audio);
+                    document.getElementById('status').textContent = 'Говорим!';
+                };
+                
+                const offer = await pc.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: false
+                });
+                await pc.setLocalDescription(offer);
+                
+                // Простое ожидание ICE
+                setTimeout(() => {
+                    document.getElementById('offerBox').value = JSON.stringify(pc.localDescription);
+                    document.getElementById('status').textContent = 'Предложение готово!';
+                }, 2000);
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+                console.error('Error:', error);
+            }
+        }
+        
+        async function createAnswer() {
+            try {
+                const offerText = document.getElementById('remoteOfferBox').value.trim();
+                if (!offerText) return alert('Вставьте предложение');
+                
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true,
+                    video: false 
+                });
+                
+                document.getElementById('status').textContent = 'Создаем ответ...';
+                
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+                
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+                
+                pc.ontrack = event => {
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.autoplay = true;
+                    document.body.appendChild(audio);
+                    document.getElementById('status').textContent = 'Говорим!';
+                };
+                
+                await pc.setRemoteDescription(JSON.parse(offerText));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                setTimeout(() => {
+                    document.getElementById('myAnswerBox').value = JSON.stringify(pc.localDescription);
+                    document.getElementById('status').textContent = 'Ответ готов!';
+                }, 2000);
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+                console.error('Error:', error);
+            }
+        }
+        
+        async function setAnswer() {
+            try {
+                const answerText = document.getElementById('answerBox').value.trim();
+                if (!answerText) return alert('Вставьте ответ');
+                
+                await pc.setRemoteDescription(JSON.parse(answerText));
+                document.getElementById('status').textContent = 'Соединяемся...';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        function copyText(elementId) {
+            const textarea = document.getElementById(elementId);
+            textarea.select();
+            document.execCommand('copy');
+            alert('Скопировано!');
+        }
+    </script>
+</body>
+</html>

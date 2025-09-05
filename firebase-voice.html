@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Голосовая связь Firebase</title>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
+</head>
+<body>
+    <h1>Голосовая связь</h1>
+    <div>Статус: <span id="status">Инициализация...</span></div>
+    <div>Ваш ID: <span id="myId"></span></div>
+    <input id="peerId" placeholder="ID друга">
+    <button onclick="call()" id="callBtn">Позвонить</button>
+    <button onclick="hangup()" id="hangupBtn" disabled>Завершить</button>
+    
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDummy-Replace-With-Real-Key",
+            authDomain: "voice-chat-demo.firebaseapp.com",
+            databaseURL: "https://voice-chat-demo-default-rtdb.firebaseio.com/",
+            projectId: "voice-chat-demo"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        let localStream;
+        let peerConnection;
+        let myId = Math.random().toString(36).substr(2, 9);
+        
+        const config = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+        
+        document.getElementById('myId').textContent = myId;
+        document.getElementById('status').textContent = 'Готов к звонку';
+        
+        // Слушаем входящие предложения
+        database.ref('calls/' + myId).on('child_added', async (snapshot) => {
+            const data = snapshot.val();
+            if (data.type === 'offer') {
+                await handleOffer(data, snapshot.key);
+            } else if (data.type === 'answer') {
+                await handleAnswer(data);
+            } else if (data.type === 'ice-candidate') {
+                await handleIceCandidate(data);
+            }
+        });
+        
+        async function call() {
+            const peerId = document.getElementById('peerId').value;
+            if (!peerId) {
+                alert('Введите ID друга');
+                return;
+            }
+            
+            document.getElementById('status').textContent = 'Звоним...';
+            
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            peerConnection = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            peerConnection.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+                document.getElementById('status').textContent = 'В разговоре';
+                document.getElementById('callBtn').disabled = true;
+                document.getElementById('hangupBtn').disabled = false;
+            };
+            
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    database.ref('calls/' + peerId).push({
+                        type: 'ice-candidate',
+                        candidate: event.candidate,
+                        from: myId
+                    });
+                }
+            };
+            
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            database.ref('calls/' + peerId).push({
+                type: 'offer',
+                offer: offer,
+                from: myId
+            });
+        }
+        
+        async function handleOffer(data, callId) {
+            document.getElementById('status').textContent = 'Входящий звонок...';
+            
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            peerConnection = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            peerConnection.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+                document.getElementById('status').textContent = 'В разговоре';
+                document.getElementById('callBtn').disabled = true;
+                document.getElementById('hangupBtn').disabled = false;
+            };
+            
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    database.ref('calls/' + data.from).push({
+                        type: 'ice-candidate',
+                        candidate: event.candidate,
+                        from: myId
+                    });
+                }
+            };
+            
+            await peerConnection.setRemoteDescription(data.offer);
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            database.ref('calls/' + data.from).push({
+                type: 'answer',
+                answer: answer,
+                from: myId
+            });
+        }
+        
+        async function handleAnswer(data) {
+            await peerConnection.setRemoteDescription(data.answer);
+        }
+        
+        async function handleIceCandidate(data) {
+            await peerConnection.addIceCandidate(data.candidate);
+        }
+        
+        function hangup() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            document.getElementById('status').textContent = 'Звонок завершен';
+            document.getElementById('callBtn').disabled = false;
+            document.getElementById('hangupBtn').disabled = true;
+        }
+    </script>
+</body>
+</html>

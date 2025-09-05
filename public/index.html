@@ -2,104 +2,87 @@
 <html>
 <head>
     <title>Голосовая связь</title>
-    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; text-align: center; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        #status { font-size: 18px; margin: 20px; }
+    </style>
 </head>
 <body>
-    <h1>Прямая голосовая связь</h1>
-    <button id="startCall">Начать звонок</button>
-    <button id="endCall" disabled>Завершить звонок</button>
-    <div id="status">Ожидание подключения...</div>
-
+    <h1>Голосовая связь</h1>
+    <div id="status">Подключение...</div>
+    <button id="startBtn" onclick="startCall()">Начать разговор</button>
+    
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        let pc;
         let localStream;
-        let peerConnection;
-        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-
-        const startBtn = document.getElementById('startCall');
-        const endBtn = document.getElementById('endCall');
-        const status = document.getElementById('status');
-
-        startBtn.onclick = async () => {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            peerConnection = new RTCPeerConnection(config);
-            
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
-
-            peerConnection.ontrack = (event) => {
-                const audio = new Audio();
-                audio.srcObject = event.streams[0];
-                audio.play();
-            };
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit('ice-candidate', event.candidate);
-                }
-            };
-
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('offer', offer);
-            
-            startBtn.disabled = true;
-            endBtn.disabled = false;
-            status.textContent = 'Ожидание ответа...';
+        
+        const config = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         };
-
-        endBtn.onclick = () => {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-            }
-            if (peerConnection) {
-                peerConnection.close();
-            }
-            startBtn.disabled = false;
-            endBtn.disabled = true;
-            status.textContent = 'Звонок завершен';
-        };
-
+        
+        socket.on('connect', () => {
+            document.getElementById('status').textContent = 'Готов к звонку';
+        });
+        
         socket.on('offer', async (offer) => {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            peerConnection = new RTCPeerConnection(config);
+            if (!pc) await createPeerConnection();
+            await pc.setRemoteDescription(offer);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('answer', answer);
+            document.getElementById('status').textContent = 'Отвечаем на звонок...';
+        });
+        
+        socket.on('answer', async (answer) => {
+            await pc.setRemoteDescription(answer);
+            document.getElementById('status').textContent = 'Соединяемся...';
+        });
+        
+        socket.on('ice-candidate', async (candidate) => {
+            if (pc) await pc.addIceCandidate(candidate);
+        });
+        
+        async function createPeerConnection() {
+            pc = new RTCPeerConnection(config);
             
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
-
-            peerConnection.ontrack = (event) => {
+            pc.ontrack = (event) => {
                 const audio = new Audio();
                 audio.srcObject = event.streams[0];
                 audio.play();
+                document.getElementById('status').textContent = 'Разговариваем!';
             };
-
-            peerConnection.onicecandidate = (event) => {
+            
+            pc.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.emit('ice-candidate', event.candidate);
                 }
             };
-
-            await peerConnection.setRemoteDescription(offer);
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            socket.emit('answer', answer);
             
-            startBtn.disabled = true;
-            endBtn.disabled = false;
-            status.textContent = 'Соединение установлено';
-        });
-
-        socket.on('answer', async (answer) => {
-            await peerConnection.setRemoteDescription(answer);
-            status.textContent = 'Соединение установлено';
-        });
-
-        socket.on('ice-candidate', async (candidate) => {
-            await peerConnection.addIceCandidate(candidate);
-        });
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            localStream.getTracks().forEach(track => {
+                pc.addTrack(track, localStream);
+            });
+        }
+        
+        async function startCall() {
+            try {
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                await createPeerConnection();
+                
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                socket.emit('offer', offer);
+                
+                document.getElementById('status').textContent = 'Ждем ответа...';
+                document.getElementById('startBtn').style.display = 'none';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
     </script>
 </body>
 </html>

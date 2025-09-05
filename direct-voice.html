@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Прямая голосовая связь</title>
+</head>
+<body>
+    <h1>Голосовая связь без сервера</h1>
+    <div>Статус: <span id="status">Готов</span></div><br>
+    
+    <button onclick="startCall()">Начать звонок</button>
+    <button onclick="answerCall()">Ответить на звонок</button><br><br>
+    
+    <textarea id="localData" rows="6" cols="80" placeholder="Ваши данные для отправки другу"></textarea><br>
+    <button onclick="copyData()">Копировать</button><br><br>
+    
+    <textarea id="remoteData" rows="6" cols="80" placeholder="Вставьте данные от друга"></textarea><br>
+    <button onclick="connectFriend()">Подключиться</button>
+    
+    <script>
+        let pc;
+        let localStream;
+        let iceCandidates = [];
+        
+        async function startCall() {
+            try {
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+                
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                
+                pc.ontrack = event => {
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.play();
+                    document.getElementById('status').textContent = 'Разговариваем!';
+                };
+                
+                pc.onicecandidate = event => {
+                    if (event.candidate) {
+                        iceCandidates.push(event.candidate);
+                        updateLocalData();
+                    }
+                };
+                
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                document.getElementById('status').textContent = 'Отправьте данные другу';
+                updateLocalData();
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        async function answerCall() {
+            try {
+                const remoteData = document.getElementById('remoteData').value;
+                if (!remoteData) return alert('Вставьте данные от друга');
+                
+                const data = JSON.parse(remoteData);
+                
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+                
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                
+                pc.ontrack = event => {
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.play();
+                    document.getElementById('status').textContent = 'Разговариваем!';
+                };
+                
+                pc.onicecandidate = event => {
+                    if (event.candidate) {
+                        iceCandidates.push(event.candidate);
+                        updateLocalData();
+                    }
+                };
+                
+                await pc.setRemoteDescription(data.offer);
+                
+                data.candidates.forEach(candidate => {
+                    pc.addIceCandidate(candidate);
+                });
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                document.getElementById('status').textContent = 'Отправьте ответ другу';
+                updateLocalData();
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        async function connectFriend() {
+            try {
+                const remoteData = document.getElementById('remoteData').value;
+                if (!remoteData) return alert('Вставьте данные от друга');
+                
+                const data = JSON.parse(remoteData);
+                
+                if (data.answer) {
+                    await pc.setRemoteDescription(data.answer);
+                }
+                
+                data.candidates.forEach(candidate => {
+                    pc.addIceCandidate(candidate);
+                });
+                
+                document.getElementById('status').textContent = 'Соединяемся...';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        function updateLocalData() {
+            const data = {
+                offer: pc.localDescription?.type === 'offer' ? pc.localDescription : null,
+                answer: pc.localDescription?.type === 'answer' ? pc.localDescription : null,
+                candidates: iceCandidates
+            };
+            document.getElementById('localData').value = JSON.stringify(data);
+        }
+        
+        function copyData() {
+            const textarea = document.getElementById('localData');
+            textarea.select();
+            document.execCommand('copy');
+            alert('Скопировано!');
+        }
+    </script>
+</body>
+</html>

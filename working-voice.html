@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Рабочая голосовая связь</title>
+</head>
+<body>
+    <h1>Голосовая связь</h1>
+    <div>Статус: <span id="status">Готов</span></div><br>
+    
+    <button onclick="createOffer()">1. Создать предложение</button><br><br>
+    <textarea id="offerBox" rows="8" cols="80" placeholder="Ваше предложение появится здесь"></textarea><br>
+    <button onclick="copyOffer()">Копировать предложение</button><br><br>
+    
+    <textarea id="answerBox" rows="8" cols="80" placeholder="Вставьте ответ от друга"></textarea><br>
+    <button onclick="setAnswer()">Принять ответ</button><br><br>
+    
+    <hr>
+    
+    <textarea id="remoteOfferBox" rows="8" cols="80" placeholder="Или вставьте предложение от друга"></textarea><br>
+    <button onclick="createAnswer()">2. Создать ответ</button><br><br>
+    <textarea id="myAnswerBox" rows="8" cols="80" placeholder="Ваш ответ появится здесь"></textarea><br>
+    <button onclick="copyAnswer()">Копировать ответ</button>
+    
+    <script>
+        let pc;
+        let localStream;
+        
+        async function createOffer() {
+            try {
+                document.getElementById('status').textContent = 'Получаем доступ к микрофону...';
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                });
+                
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+                
+                pc.ontrack = event => {
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.play();
+                    document.getElementById('status').textContent = 'Связь установлена! Говорите.';
+                };
+                
+                pc.oniceconnectionstatechange = () => {
+                    document.getElementById('status').textContent = 'Состояние: ' + pc.iceConnectionState;
+                };
+                
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                // Ждем сбора ICE кандидатов
+                await new Promise(resolve => {
+                    pc.onicecandidate = event => {
+                        if (event.candidate === null) {
+                            resolve();
+                        }
+                    };
+                });
+                
+                document.getElementById('offerBox').value = JSON.stringify(pc.localDescription);
+                document.getElementById('status').textContent = 'Предложение готово! Отправьте другу.';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        async function createAnswer() {
+            try {
+                const offerText = document.getElementById('remoteOfferBox').value.trim();
+                if (!offerText) {
+                    alert('Вставьте предложение от друга');
+                    return;
+                }
+                
+                document.getElementById('status').textContent = 'Получаем доступ к микрофону...';
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                });
+                
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+                
+                pc.ontrack = event => {
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.play();
+                    document.getElementById('status').textContent = 'Связь установлена! Говорите.';
+                };
+                
+                pc.oniceconnectionstatechange = () => {
+                    document.getElementById('status').textContent = 'Состояние: ' + pc.iceConnectionState;
+                };
+                
+                const offer = JSON.parse(offerText);
+                await pc.setRemoteDescription(offer);
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                // Ждем сбора ICE кандидатов
+                await new Promise(resolve => {
+                    pc.onicecandidate = event => {
+                        if (event.candidate === null) {
+                            resolve();
+                        }
+                    };
+                });
+                
+                document.getElementById('myAnswerBox').value = JSON.stringify(pc.localDescription);
+                document.getElementById('status').textContent = 'Ответ готов! Отправьте другу.';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        async function setAnswer() {
+            try {
+                const answerText = document.getElementById('answerBox').value.trim();
+                if (!answerText) {
+                    alert('Вставьте ответ от друга');
+                    return;
+                }
+                
+                const answer = JSON.parse(answerText);
+                await pc.setRemoteDescription(answer);
+                document.getElementById('status').textContent = 'Устанавливаем соединение...';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        function copyOffer() {
+            const textarea = document.getElementById('offerBox');
+            textarea.select();
+            document.execCommand('copy');
+            alert('Предложение скопировано!');
+        }
+        
+        function copyAnswer() {
+            const textarea = document.getElementById('myAnswerBox');
+            textarea.select();
+            document.execCommand('copy');
+            alert('Ответ скопирован!');
+        }
+    </script>
+</body>
+</html>

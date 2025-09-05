@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>P2P Голосовая связь</title>
+</head>
+<body>
+    <h1>Голосовая связь P2P</h1>
+    <div>Статус: <span id="status">Готов</span></div>
+    
+    <h3>Шаг 1: Создать предложение</h3>
+    <button onclick="createOffer()">Создать предложение</button>
+    <textarea id="localOffer" placeholder="Ваше предложение появится здесь" rows="5" cols="50"></textarea>
+    
+    <h3>Шаг 2: Вставить ответ друга</h3>
+    <textarea id="remoteAnswer" placeholder="Вставьте ответ от друга" rows="5" cols="50"></textarea>
+    <button onclick="setAnswer()">Принять ответ</button>
+    
+    <h3>ИЛИ: Ответить на предложение</h3>
+    <textarea id="remoteOffer" placeholder="Вставьте предложение от друга" rows="5" cols="50"></textarea>
+    <button onclick="createAnswer()">Создать ответ</button>
+    <textarea id="localAnswer" placeholder="Ваш ответ появится здесь" rows="5" cols="50"></textarea>
+    
+    <script>
+        let localStream;
+        let peerConnection;
+        const config = { 
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ] 
+        };
+        
+        async function createOffer() {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            peerConnection = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            peerConnection.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+                document.getElementById('status').textContent = 'Соединен!';
+            };
+            
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            document.getElementById('localOffer').value = JSON.stringify(offer);
+            document.getElementById('status').textContent = 'Предложение создано. Отправьте другу.';
+        }
+        
+        async function createAnswer() {
+            const offerText = document.getElementById('remoteOffer').value;
+            if (!offerText) return alert('Вставьте предложение');
+            
+            const offer = JSON.parse(offerText);
+            
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            peerConnection = new RTCPeerConnection(config);
+            
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            peerConnection.ontrack = (event) => {
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play();
+                document.getElementById('status').textContent = 'Соединен!';
+            };
+            
+            await peerConnection.setRemoteDescription(offer);
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            document.getElementById('localAnswer').value = JSON.stringify(answer);
+            document.getElementById('status').textContent = 'Ответ создан. Отправьте другу.';
+        }
+        
+        async function setAnswer() {
+            const answerText = document.getElementById('remoteAnswer').value;
+            if (!answerText) return alert('Вставьте ответ');
+            
+            const answer = JSON.parse(answerText);
+            await peerConnection.setRemoteDescription(answer);
+            document.getElementById('status').textContent = 'Соединение установлено!';
+        }
+    </script>
+</body>
+</html>

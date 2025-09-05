@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Простая связь</title>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <h1>Голосовая связь</h1>
+    <div>Статус: <span id="status">Подключение...</span></div>
+    <div>Ваш ID: <span id="myId">Ожидание...</span></div>
+    <input id="peerId" placeholder="ID друга">
+    <button onclick="call()">Позвонить</button>
+    
+    <script>
+        const status = document.getElementById('status');
+        const myIdEl = document.getElementById('myId');
+        
+        const peer = new Peer({
+            host: 'peerjs-server.herokuapp.com',
+            port: 443,
+            path: '/peerjs/myapp',
+            secure: true
+        });
+        
+        let localStream;
+        
+        peer.on('open', id => {
+            myIdEl.textContent = id;
+            status.textContent = 'Готов к звонку';
+        });
+        
+        peer.on('error', err => {
+            status.textContent = 'Ошибка: ' + err.message;
+        });
+        
+        peer.on('call', async call => {
+            status.textContent = 'Входящий звонок...';
+            localStream = await navigator.mediaDevices.getUserMedia({audio: true});
+            call.answer(localStream);
+            call.on('stream', stream => {
+                const audio = new Audio();
+                audio.srcObject = stream;
+                audio.play();
+                status.textContent = 'В разговоре';
+            });
+        });
+        
+        async function call() {
+            const peerId = document.getElementById('peerId').value;
+            if (!peerId) {
+                alert('Введите ID друга');
+                return;
+            }
+            
+            status.textContent = 'Звоним...';
+            localStream = await navigator.mediaDevices.getUserMedia({audio: true});
+            const call = peer.call(peerId, localStream);
+            call.on('stream', stream => {
+                const audio = new Audio();
+                audio.srcObject = stream;
+                audio.play();
+                status.textContent = 'В разговоре';
+            });
+        }
+    </script>
+</body>
+</html>
