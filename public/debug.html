@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Диагностика звука</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        button { padding: 10px 20px; margin: 5px; font-size: 16px; }
+        .info { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        audio { width: 100%; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Диагностика звука</h1>
+    
+    <button onclick="testMic()">1. Тест микрофона</button>
+    <button onclick="testSpeakers()">2. Тест динамиков</button>
+    <button onclick="makeCall()">3. Позвонить</button>
+    
+    <div id="status">Готов к тестам</div>
+    
+    <div class="info">
+        <h3>Информация об устройствах:</h3>
+        <div id="devices"></div>
+    </div>
+    
+    <div id="audioContainer"></div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let pc;
+        let localStream;
+        
+        // Показать доступные устройства
+        navigator.mediaDevices.enumerateDevices().then(devices => {
+            const deviceList = devices.filter(d => d.kind === 'audioinput' || d.kind === 'audiooutput');
+            document.getElementById('devices').innerHTML = deviceList.map(d => 
+                `${d.kind}: ${d.label || 'Устройство ' + d.deviceId.substr(0,8)}`
+            ).join('<br>');
+        });
+        
+        async function testMic() {
+            try {
+                document.getElementById('status').textContent = 'Тестируем микрофон...';
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Создаем аудио элемент для прослушивания себя
+                const audio = document.createElement('audio');
+                audio.srcObject = stream;
+                audio.controls = true;
+                audio.muted = false; // Важно!
+                audio.volume = 1.0;
+                document.getElementById('audioContainer').innerHTML = '';
+                document.getElementById('audioContainer').appendChild(audio);
+                
+                document.getElementById('status').textContent = 'Микрофон работает! Нажмите play чтобы услышать себя.';
+                
+                // Остановить через 10 секунд
+                setTimeout(() => {
+                    stream.getTracks().forEach(track => track.stop());
+                }, 10000);
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка микрофона: ' + error.message;
+            }
+        }
+        
+        function testSpeakers() {
+            document.getElementById('status').textContent = 'Тестируем динамики...';
+            
+            // Создаем тестовый звук
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // Нота A
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 2);
+            
+            document.getElementById('status').textContent = 'Играет тестовый звук 440Hz на 2 секунды';
+        }
+        
+        socket.on('offer', async (offer) => {
+            try {
+                document.getElementById('status').textContent = 'Входящий звонок...';
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+                
+                pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                
+                pc.ontrack = event => {
+                    document.getElementById('status').textContent = 'Получен удаленный поток!';
+                    
+                    const remoteStream = event.streams[0];
+                    const audio = document.createElement('audio');
+                    audio.srcObject = remoteStream;
+                    audio.autoplay = true;
+                    audio.controls = true;
+                    audio.volume = 1.0;
+                    
+                    document.getElementById('audioContainer').innerHTML = '<h3>Удаленный звук:</h3>';
+                    document.getElementById('audioContainer').appendChild(audio);
+                    
+                    // Принудительно включаем
+                    audio.play().then(() => {
+                        document.getElementById('status').textContent = 'Звук должен играть! Проверьте громкость.';
+                    }).catch(e => {
+                        document.getElementById('status').textContent = 'Нажмите play: ' + e.message;
+                    });
+                };
+                
+                pc.onicecandidate = event => {
+                    if (event.candidate) socket.emit('ice-candidate', event.candidate);
+                };
+                
+                await pc.setRemoteDescription(offer);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit('answer', answer);
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        });
+        
+        socket.on('answer', async (answer) => {
+            await pc.setRemoteDescription(answer);
+        });
+        
+        socket.on('ice-candidate', async (candidate) => {
+            if (pc) await pc.addIceCandidate(candidate);
+        });
+        
+        async function makeCall() {
+            try {
+                document.getElementById('status').textContent = 'Запрашиваем микрофон...';
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+                
+                pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                
+                pc.ontrack = event => {
+                    document.getElementById('status').textContent = 'Получен удаленный поток!';
+                    
+                    const remoteStream = event.streams[0];
+                    const audio = document.createElement('audio');
+                    audio.srcObject = remoteStream;
+                    audio.autoplay = true;
+                    audio.controls = true;
+                    audio.volume = 1.0;
+                    
+                    document.getElementById('audioContainer').innerHTML = '<h3>Удаленный звук:</h3>';
+                    document.getElementById('audioContainer').appendChild(audio);
+                    
+                    audio.play().then(() => {
+                        document.getElementById('status').textContent = 'Звук должен играть! Проверьте громкость.';
+                    }).catch(e => {
+                        document.getElementById('status').textContent = 'Нажмите play: ' + e.message;
+                    });
+                };
+                
+                pc.onicecandidate = event => {
+                    if (event.candidate) socket.emit('ice-candidate', event.candidate);
+                };
+                
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                socket.emit('offer', offer);
+                
+                document.getElementById('status').textContent = 'Звоним...';
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
