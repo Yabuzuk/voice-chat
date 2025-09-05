@@ -37,7 +37,14 @@
                 isInitiator = true;
             } else if (count === 2 && !isInitiator) {
                 document.getElementById('status').textContent = 'Подключаемся автоматически...';
-                setTimeout(() => createPeerConnection(), 1000);
+                setTimeout(async () => {
+                    try {
+                        await createPeerConnection();
+                        document.getElementById('status').textContent = 'Готов принять звонок';
+                    } catch (error) {
+                        document.getElementById('status').textContent = 'Ошибка: ' + error.message;
+                    }
+                }, 1000);
             }
         });
         
